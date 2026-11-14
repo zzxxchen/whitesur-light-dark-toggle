@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# 确保 ~/.config/gtk-4.0/gtk.css 是 WhiteSur 的“明暗合并”样式表：
+# 浅色/深色两个分支靠 prefers-color-scheme 选择，libadwaita 应用会自动
+# 跟随 color-scheme，因此切换主题时不再需要替换 gtk.css。
+# 只有在 gtk.css 缺失、是符号链接（旧脚本/旧安装器留下的）或不是合并
+# 文件时才会重建；已有的手动修改不会被覆盖。
+set -euo pipefail
+
+dir="$HOME/.config/gtk-4.0"
+css="$dir/gtk.css"
+
+[ -f "$dir/gtk-Light.css" ] && [ -f "$dir/gtk-Dark.css" ] || exit 0
+
+if [ -f "$css" ] && [ ! -L "$css" ] && grep -q 'WhiteSur: light/dark branches' "$css"; then
+    exit 0
+fi
+
+tmp="$(mktemp "$dir/.gtk.css.new.XXXXXX")"
+{
+    printf '/* WhiteSur: light/dark branches, selected via prefers-color-scheme */\n'
+    printf '@media (prefers-color-scheme: light) {\n'
+    cat "$dir/gtk-Light.css"
+    printf '\n}'
+    printf '\n\n@media (prefers-color-scheme: dark) {\n'
+    cat "$dir/gtk-Dark.css"
+    printf '\n}\n'
+} > "$tmp"
+chmod 644 "$tmp"
+mv "$tmp" "$css"

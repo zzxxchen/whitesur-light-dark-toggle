@@ -1,0 +1,8 @@
+[/]
+buttonclick1-setting=2
+entryrow1-setting='sh ~/.config/bin/theme-dark.sh'
+entryrow2-setting='sh ~/.config/bin/theme-light.sh'
+entryrow3-setting='WhiteSur Dark'
+entryrow4-setting='dark-mode-symbolic'
+showindicator1-setting=false
+togglestate1-setting=true

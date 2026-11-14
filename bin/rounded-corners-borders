@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Switch rounded-window-corners border colors for a light/dark theme.
+
+Called by ~/.config/bin/theme-light.sh and theme-dark.sh.
+Only `borderColor` is touched; radius, padding, enabled, ... are preserved.
+
+    rounded-corners-borders light
+    rounded-corners-borders dark
+"""
+
+import os
+import sys
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+
+SCHEMA_ID = "org.gnome.shell.extensions.rounded-window-corners-reborn"
+
+# Color used by every window that is not pinned below.
+DEFAULT_COLORS = {
+    "light": "#c0bfbc",
+    "dark": "#241f31",
+}
+
+# Windows that must keep the same border in both themes (app id -> color).
+PINNED_COLORS = {
+    "Termius": "#241f31",
+    "steam": "#241f31",
+    "eudic": "#c0bfbc",
+    "Vlc": "#241f31",
+    "org.gimp.GIMP": "#241f31",
+    "org.inkscape.Inkscape": "#241f31",
+}
+
+
+def find_schema_dir():
+    candidates = []
+    base = os.path.expanduser("~/.local/share/gnome-shell/extensions")
+    if os.path.isdir(base):
+        for name in sorted(os.listdir(base)):
+            if name.startswith("rounded-window-corners"):
+                candidates.append(os.path.join(base, name, "schemas"))
+    candidates.append("/usr/share/gnome-shell/extensions/rounded-window-corners@fxgn/schemas")
+    for path in candidates:
+        if os.path.isfile(os.path.join(path, "gschemas.compiled")):
+            return path
+    sys.exit("error: rounded-window-corners schemas not found")
+
+
+def get_settings():
+    source = Gio.SettingsSchemaSource.new_from_directory(
+        find_schema_dir(), Gio.SettingsSchemaSource.get_default(), False
+    )
+    schema = source.lookup(SCHEMA_ID, True)
+    if schema is None:
+        sys.exit(f"error: schema {SCHEMA_ID} not found")
+    return Gio.Settings.new_full(schema, None, None)
+
+
+def parse_color(value):
+    text = value.strip().lstrip("#")
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) == 6:
+        text += "ff"
+    if len(text) != 8:
+        raise ValueError(f"bad color {value!r}")
+    return tuple(int(text[i : i + 2], 16) / 255.0 for i in (0, 2, 4, 6))
+
+
+def pack_rounded_corners(settings):
+    return GLib.Variant(
+        "a{sv}",
+        {
+            "padding": GLib.Variant("a{su}", settings["padding"]),
+            "keepRoundedCorners": GLib.Variant("a{sb}", settings["keepRoundedCorners"]),
+            "borderRadius": GLib.Variant("u", int(settings["borderRadius"])),
+            "smoothing": GLib.Variant("d", float(settings["smoothing"])),
+            "borderColor": GLib.Variant(
+                "(dddd)", tuple(float(x) for x in settings["borderColor"])
+            ),
+            "enabled": GLib.Variant("b", bool(settings["enabled"])),
+        },
+    )
+
+
+def apply_mode(mode, settings):
+    default = parse_color(DEFAULT_COLORS[mode])
+
+    custom = settings.get_value("custom-rounded-corner-settings").unpack()
+    global_settings = settings.get_value("global-rounded-corner-settings").unpack()
+
+    for app, options in custom.items():
+        color = PINNED_COLORS.get(app)
+        options["borderColor"] = parse_color(color) if color else default
+    global_settings["borderColor"] = default
+
+    settings.set_value(
+        "custom-rounded-corner-settings",
+        GLib.Variant(
+            "a{sv}", {app: pack_rounded_corners(opts) for app, opts in custom.items()}
+        ),
+    )
+    settings.set_value(
+        "global-rounded-corner-settings", pack_rounded_corners(global_settings)
+    )
+    print(f"rounded-window-corners: applied '{mode}' borders")
+
+
+def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in ("light", "dark"):
+        sys.exit("usage: rounded-corners-borders light|dark")
+    apply_mode(sys.argv[1], get_settings())
+
+
+if __name__ == "__main__":
+    main()
